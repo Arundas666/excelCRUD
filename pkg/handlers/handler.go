@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -71,48 +73,78 @@ func ImportData(c *gin.Context) {
     }
 }
 
-
 func GetData(c *gin.Context) {
-	records, err := db.Redis.Get(c, "records").Result()
-	if err == nil {
-		c.JSON(http.StatusOK, gin.H{"data": records})
-		return
-	}
+    // Try to get data from Redis
+    recordsJSON, err := db.Redis.Get(c, "records").Result()
+    if err == nil {
+        var records []models.Record
+        if err := json.Unmarshal([]byte(recordsJSON), &records); err == nil {
+            c.JSON(http.StatusOK, gin.H{"data": records})
+            return
+        } else {
+            log.Printf("Error unmarshaling data from Redis: %v", err)
+        }
+    }
 
-	recordsDB, err := repository.GetRecords()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve records"})
-		return
-	}
+    // Data not in cache, retrieve from database
+    recordsDB, err := repository.GetRecords()
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve records"})
+        return
+    }
 
-	db.Redis.Set(c, "records", recordsDB, 5*time.Minute)
-	c.JSON(http.StatusOK, gin.H{"data": recordsDB})
+    // Marshal data to JSON before caching
+    recordsJSONBytes, err := json.Marshal(recordsDB)
+    if err != nil {
+        log.Printf("Error marshaling data to JSON: %v", err)
+    } else {
+        recordsJSON := string(recordsJSONBytes) // Convert []byte to string
+        err = db.Redis.Set(c, "records", recordsJSON, 5*time.Minute).Err()
+        if err != nil {
+            log.Printf("Error caching data: %v", err)
+        }
+    }
 
+    c.JSON(http.StatusOK, gin.H{"data": recordsDB})
 }
 
 func UpdateData(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
-		return
-	}
+    id, err := strconv.Atoi(c.Param("id"))
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+        return
+    }
 
-	var record models.Record
-	if err := c.ShouldBindJSON(&record); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
-		return
-	}
+    var record models.Record
+    if err := c.ShouldBindJSON(&record); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+        return
+    }
 
-	if err := repository.UpdateRecord(id, record); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update record"})
-		return
-	}
+    go func() {
+        if err := repository.UpdateRecord(id, record); err != nil {
+            log.Printf("Failed to update record: %v", err)
+        }
+        db.Redis.Del(c, "records")
+    }()
 
-	db.Redis.Del(c, "records")
-
-	c.JSON(http.StatusOK, gin.H{"message": "Record updated successfully"})
+    c.JSON(http.StatusOK, gin.H{"message": "Record update initiated"})
 }
 
 func DeleteData(c *gin.Context) {
+    id, err := strconv.Atoi(c.Param("id"))
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+        return
+    }
 
+    if err := repository.DeleteRecord(id); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete record"})
+        return
+    }
+
+    // Clear the cache to ensure consistency
+    db.Redis.Del(c, "records")
+
+    c.JSON(http.StatusOK, gin.H{"message": "Record deleted successfully"})
 }

@@ -11,7 +11,4 @@ func Router(r *gin.RouterGroup){
 	r.DELETE("/delete",handlers.DeleteData)
     r.GET("/data", handlers.GetData)
     r.PUT("/data/:id", handlers.UpdateData)
-
-
-
 }

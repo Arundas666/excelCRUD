@@ -17,18 +17,20 @@ func InsertRecord(records []models.Record) error {
 }
 
 func GetRecords() ([]models.Record, error) {
-   
-
     var records []models.Record
     result := db.DB.Find(&records)
     if result.Error != nil {
         return nil, result.Error
     }
-
     return records, nil
 }
 
 func UpdateRecord(id int, record models.Record) error {
     result := db.DB.Model(&models.Record{}).Where("id = ?", id).Updates(record)
+    return result.Error
+}
+
+func DeleteRecord(id int) error {
+    result := db.DB.Delete(&models.Record{}, id)
     return result.Error
 }
