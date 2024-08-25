@@ -5,9 +5,15 @@ import (
 	"vrwizards/pkg/models"
 )
 
-func InsertRecord(record models.Record) error {
-    result := db.DB.Create(&record)
-     return result.Error
+func InsertRecord(records []models.Record) error {
+    tx := db.DB.Begin()
+    for _, record := range records {
+        if err := tx.Create(&record).Error; err != nil {
+            tx.Rollback()
+            return err
+        }
+    }
+    return tx.Commit().Error
 }
 
 func GetRecords() ([]models.Record, error) {

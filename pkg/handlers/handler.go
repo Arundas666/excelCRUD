@@ -33,15 +33,26 @@ func ImportData(c *gin.Context) {
         return
     }
 
+    const maxConcurrent = 10
+    sem := make(chan struct{}, maxConcurrent)
     var wg sync.WaitGroup
     var mu sync.Mutex
     var errors []string
 
+    tx := db.DB.Begin()
+    if tx.Error != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start transaction"})
+        return
+    }
+
     for _, record := range records {
         wg.Add(1)
+        sem <- struct{}{}
         go func(record models.Record) {
             defer wg.Done()
-            if err := repository.InsertRecord(record); err != nil {
+            defer func() { <-sem }()
+
+            if err := tx.Create(&record).Error; err != nil {
                 mu.Lock()
                 errors = append(errors, fmt.Sprintf("Failed to insert record: %v", err))
                 mu.Unlock()
@@ -52,11 +63,14 @@ func ImportData(c *gin.Context) {
     wg.Wait()
 
     if len(errors) > 0 {
+        tx.Rollback()
         c.JSON(http.StatusInternalServerError, gin.H{"errors": errors})
     } else {
+        tx.Commit()
         c.JSON(http.StatusOK, gin.H{"message": "Data imported successfully"})
     }
 }
+
 
 func GetData(c *gin.Context) {
 	records, err := db.Redis.Get(c, "records").Result()

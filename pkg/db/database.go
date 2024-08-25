@@ -19,41 +19,44 @@ var (
 	Ctx   = context.Background()
 )
 
-
 func SetupDatabase() {
-    user := os.Getenv("DB_USER")
-    password := os.Getenv("DB_PASSWORD")
-    host := os.Getenv("DB_HOST")
-    port := os.Getenv("DB_PORT")
-    dbname := os.Getenv("DB_NAME")
-    sslMode := os.Getenv("DB_SSL_MODE")
+	user := os.Getenv("DB_USER")
+	password := os.Getenv("DB_PASSWORD")
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+	dbname := os.Getenv("DB_NAME")
+	sslMode := os.Getenv("DB_SSL_MODE")
 
-    dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?tls=%s", user, password, host, port, dbname, sslMode)
-    fmt.Println("DSN:", dsn) // Debugging line
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?tls=%s", user, password, host, port, dbname, sslMode)
+	fmt.Println("DSN:", dsn) // Debugging line
 
-    var err error
-    DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
-    if err != nil {
-        log.Fatalf("Error connecting to database: %v", err)
-    }
+	var err error
+	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("Error connecting to database: %v", err)
+	}
 
-    sqlDB, err := DB.DB()
-    if err != nil {
-        log.Fatalf("Error getting database connection: %v", err)
-    }
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Fatalf("Error getting database connection: %v", err)
+	}
 
-    if err = sqlDB.Ping(); err != nil {
-        log.Fatalf("Error pinging database: %v", err)
-    }
+	if err = sqlDB.Ping(); err != nil {
+		log.Fatalf("Error pinging database: %v", err)
+	}
 	DB.AutoMigrate(models.Record{})
 
-    log.Println("Database connected successfully")
+	log.Println("Database connected successfully")
 }
 func SetupRedis() {
-	opt, _ := redis.ParseURL(os.Getenv("REDIS_HOST"))
+	log.Println("REDIS_HOST:", os.Getenv("REDIS_HOST"))
+	opt, err := redis.ParseURL(os.Getenv("REDIS_HOST"))
+	if err != nil {
+		log.Fatalf("Error parsing Redis URL: %v", err)
+	}
 	Redis = redis.NewClient(opt)
 
-	_, err := Redis.Ping(Ctx).Result()
+	_, err = Redis.Ping(Ctx).Result()
 	if err != nil {
 		log.Fatalf("Error connecting to Redis: %v", err)
 	}
